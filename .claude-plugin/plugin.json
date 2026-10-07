@@ -1,0 +1,5 @@
+{
+  "name": "clawd-tracker",
+  "version": "0.1.0",
+  "description": "Mostra o status das sessões do Claude Code (ocioso, trabalhando, atenção, finalizado) com o Clawd animado na tela do teclado. Requer o daemon `clawd-tracker` rodando."
+}

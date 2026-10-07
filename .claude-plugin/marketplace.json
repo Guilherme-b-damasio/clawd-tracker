@@ -1,0 +1,11 @@
+{
+  "name": "clawd-tracker",
+  "owner": { "name": "clawd-tracker" },
+  "plugins": [
+    {
+      "name": "clawd-tracker",
+      "source": "./",
+      "description": "Status do Claude Code na tela do teclado Attack Shark X820 Ultra"
+    }
+  ]
+}

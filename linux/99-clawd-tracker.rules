@@ -1,0 +1,2 @@
+# Permite acessar a tela do Attack Shark X820 Ultra (cabo) sem root.
+KERNEL=="hidraw*", ATTRS{idVendor}=="3151", ATTRS{idProduct}=="5002", MODE="0660", TAG+="uaccess"

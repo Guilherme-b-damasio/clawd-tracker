@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clawd-tracker"
+version = "0.1.0"
+description = "Status do Claude Code com o Clawd animado na tela do teclado Attack Shark X820 Ultra"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["pillow>=9", "hidapi>=0.14"]
+
+[project.scripts]
+clawd-tracker = "clawd_tracker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
