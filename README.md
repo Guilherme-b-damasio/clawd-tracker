@@ -82,6 +82,20 @@ clawd-tracker hooks
 clawd-tracker status
 ```
 
+## Status lights (optional)
+
+```bash
+clawd-tracker run --lights            # or: --light-color ff4600
+```
+
+The keyboard is put in its "Music Follow" lighting mode once (in one color), and the daemon streams
+bar heights for the 21 columns, like an equalizer: a moving wave while working, everything blinking
+when asking for permission, everything on for 30 s when done. Nothing is sent in idle/offline.
+
+These bar packets (`0x0D`) are what the official app streams ~30 times per second while music plays,
+so they are not written to flash. Only switching the lighting mode is saved, and the daemon does that
+only when the keyboard is not already in that mode. Off by default; works only over the cable.
+
 ## Requirements and limitations
 
 - The keyboard must be **on the cable, in wired mode**. The firmware refuses image uploads over 2.4G
@@ -89,12 +103,15 @@ clawd-tracker status
   screen doesn't update.
 - On Windows, **close the official Attack Shark app**: it talks to the keyboard at the same time and
   corrupts uploads.
-- Each change is written to the keyboard's flash memory.
+- Each screen change is written to the keyboard's flash memory, so the screen only changes when the
+  overall state changes, at most once every 60 s (`--screen-cooldown`). Use `--no-screen` to never
+  touch it.
 
 ## Commands
 
 ```
-clawd-tracker run [--dry-run]     run the daemon in the foreground (--dry-run: no keyboard, writes ~/.clawd-tracker/current.gif)
+clawd-tracker run [--lights] [--no-screen] [--screen-cooldown S] [--dry-run]
+                                  run the daemon in the foreground (--dry-run: no keyboard, writes ~/.clawd-tracker/current.gif)
 clawd-tracker autostart [--remove]
 clawd-tracker hooks [--remove]
 clawd-tracker udev
@@ -126,6 +143,11 @@ Extracted from the official driver (Attack Shark Driver v4). Details in
 - `0x25`: data, 8-byte header + 56 bytes of RGB565 big-endian pixels, scanned column by column.
 - Pure black pixels outside the drawing don't need to be sent (the rectangle covers only the rest).
 - A ~1 ms pause between packets is needed, otherwise the keyboard drops data and the frames come out corrupted.
+- `0x07`: saved lighting effect `[mode, 4-speed, brightness, option<<4|7, R, G, B]`, checksum on byte 8
+  instead of 7. Read with `0x87`. Saved on the keyboard.
+- `0x0D`: "Music Follow 2" (mode 22) data, 21 bar heights (0..6). Captured from the official app with
+  Frida. Ignored over 2.4G.
+- `0x0F` (the driver's per-LED "light sync") does nothing on this firmware (`0x8F` byte 11 = 0).
 
 ## Other files
 

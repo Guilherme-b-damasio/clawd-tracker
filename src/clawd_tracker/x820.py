@@ -6,11 +6,18 @@ Protocolo extraído do driver oficial (Attack Shark Driver v4, Electron):
 - 0xA5: cabeçalho (quadro, total, delay em ms, tamanho do quadro, retângulo).
 - 0x25: dados, 8 bytes de cabeçalho + 56 bytes de pixels RGB565 big-endian,
   varridos por coluna (x externo, y interno).
+- 0x07: efeito de luz salvo [modo, 4-velocidade, brilho, opção<<4|7, R, G, B], checksum no byte 8.
+  Fica salvo no teclado (grava na flash): usar só para configurar uma vez. Leitura: 0x87.
+- 0x0D: dados do efeito "Music Follow 2" (modo 22): 21 alturas de barra (0..6), uma por coluna.
+  O app oficial manda ~30 por segundo enquanto toca música, então não vai para a flash
+  (a leitura 0x87 não muda). Capturado do driver com Frida. Só funciona pelo cabo.
+- O 0x0F (sendSyncColor do driver, cor por LED) não faz nada neste firmware (0x8F byte 11 = 0).
 - Pelo receptor 2.4G (PID 0x5006) cada comando é roteado: F7 (status),
   F6 0x0A (seleciona teclado), comando, e para ler: F7 até canRead, FC, get.
   O firmware recusa envio de imagem pelo 2.4G, então o upload exige o cabo.
 """
 import sys
+import threading
 import time
 
 
@@ -32,6 +39,8 @@ VID = 0x3151
 PID_WIRED = 0x5002
 PID_DONGLE = 0x5006
 W = H = 128
+BAR_COLS, BAR_MAX = 21, 6
+MODE_MUSIC_FOLLOW = 22
 
 
 def _pad(cmd):
@@ -43,6 +52,12 @@ def _pad(cmd):
 def _encode(cmd):
     b = _pad(cmd)
     b[7] = 255 - (sum(b[:7]) & 255)
+    return b
+
+
+def _encode8(cmd):
+    b = _pad(cmd)
+    b[8] = 255 - (sum(b[:8]) & 255)
     return b
 
 
@@ -70,6 +85,7 @@ class X820:
         self.h = hid.device()
         self.h.open_path(devs[0]['path'])
         self._routed = False
+        self.lock = threading.RLock()  # luzes e tela usam o mesmo dispositivo em threads diferentes
         self.packet_sleep = 0.001   # sem pausa o teclado perde pacotes e os quadros saem corrompidos
 
     def close(self):
@@ -96,9 +112,9 @@ class X820:
             time.sleep(0.003)
         return False
 
-    def send(self, cmd):
+    def send(self, cmd, encode=_encode):
         if not self.wireless:
-            self._feat(_encode(cmd))
+            self._feat(encode(cmd))
             return True
         if not self._wait('canSend'):
             return False
@@ -106,7 +122,7 @@ class X820:
             self._feat(_pad([0xF6, 0x0A]))
             time.sleep(0.01)
             self._routed = True
-        self._feat(_encode(cmd))
+        self._feat(encode(cmd))
         return True
 
     def ask(self, cmd, timeout=1.0, read_delay=0.01):
@@ -129,8 +145,30 @@ class X820:
     def battery(self):
         return self._status()['battery'] if self.wireless else None
 
+    def light_setting(self):
+        """Efeito de luz salvo: 7 bytes [modo, 4-velocidade, brilho, opção, R, G, B], ou None."""
+        with self.lock:
+            r = self.ask([0x87])
+            return bytes(r[1:8]) if r and r[0] == 0x87 else None
+
+    def set_light_setting(self, params):
+        """Muda o efeito salvo. Grava na flash do teclado: não chamar com frequência."""
+        with self.lock:
+            return self.send([0x07] + list(params), encode=_encode8)
+
+    def music_bars(self, heights):
+        """Alturas (0..BAR_MAX) das BAR_COLS colunas no modo Music Follow. Não grava na flash."""
+        h = [max(0, min(BAR_MAX, int(v))) for v in heights[:BAR_COLS]]
+        with self.lock:
+            return self.send([0x0D, 0, 0, 0, 0, 0, 0, 0] + h)
+
     def upload(self, frames, delay_ms=80, progress=None):
-        """frames: lista de PIL.Image 128x128. Preto puro (0,0,0) fora do desenho não é enviado."""
+        """frames: lista de PIL.Image 128x128. Preto puro (0,0,0) fora do desenho não é enviado.
+        Grava na flash da tela: só funciona pelo cabo."""
+        with self.lock:
+            return self._upload(frames, delay_ms, progress)
+
+    def _upload(self, frames, delay_ms, progress):
         rgb = [f.convert('RGB') for f in frames]
         box = None
         for im in rgb:

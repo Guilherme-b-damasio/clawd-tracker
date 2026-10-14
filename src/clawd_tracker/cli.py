@@ -1,6 +1,11 @@
 """clawd-tracker: Clawd do Claude Code na tela do teclado.
 
-  clawd-tracker run [--dry-run]     roda o daemon (em primeiro plano)
+  clawd-tracker run [opções]        roda o daemon (em primeiro plano)
+      --no-screen                   não mexe na tela (nenhuma gravação na flash)
+      --lights                      status também nas luzes (efeito Music Follow, só pelo cabo)
+      --light-color RRGGBB          cor das luzes (padrão ff4600)
+      --screen-cooldown SEG         intervalo mínimo entre gravações da tela (padrão 60)
+      --dry-run                     sem teclado: grava ~/.clawd-tracker/current.gif
   clawd-tracker autostart           inicia junto com o sistema (Windows: Inicializar; Linux: systemd --user)
   clawd-tracker autostart --remove
   clawd-tracker hooks               grava os hooks HTTP no ~/.claude/settings.json (se não usar o plugin)
@@ -18,7 +23,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-from .server import DEFAULT_PORT, run
+from .server import DEFAULT_PORT, DEFAULT_SCREEN_COOLDOWN, run
 
 HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
                "Notification", "Stop", "SessionEnd"]
@@ -133,7 +138,8 @@ def cmd_status(args):
                                                if sys.platform.startswith("linux") else ""))
         else:
             wired = devs[0]["product_id"] == PID_WIRED
-            print("teclado: " + ("conectado pelo cabo" if wired else "só pelo 2.4G (a tela só atualiza com o cabo)"))
+            print("teclado: " + ("conectado pelo cabo" if wired
+                                 else "só pelo 2.4G (tela e luzes de status precisam do cabo)"))
     except Exception as e:
         print(f"teclado: erro ao procurar ({e})")
 
@@ -166,6 +172,10 @@ def main(argv=None):
     r = sub.add_parser("run")
     r.add_argument("--dry-run", action="store_true", help="sem teclado: grava ~/.clawd-tracker/current.gif")
     r.add_argument("--port", type=int, default=DEFAULT_PORT)
+    r.add_argument("--no-screen", action="store_true", help="não mexe na tela")
+    r.add_argument("--lights", action="store_true", help="status também nas luzes (só pelo cabo)")
+    r.add_argument("--light-color", default="ff4600", help="cor das luzes em hex (padrão ff4600)")
+    r.add_argument("--screen-cooldown", type=float, default=DEFAULT_SCREEN_COOLDOWN)
     for name in ("hooks", "autostart"):
         s = sub.add_parser(name)
         s.add_argument("--remove", action="store_true")
@@ -180,7 +190,9 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     if args.cmd == "run":
-        sys.exit(run(args.port, args.dry_run))
+        color = tuple(bytes.fromhex(args.light_color.lstrip("#")))
+        sys.exit(run(args.port, args.dry_run, screen=not args.no_screen, use_lights=args.lights,
+                     screen_cooldown=args.screen_cooldown, light_color=color))
     {"hooks": cmd_hooks, "autostart": cmd_autostart, "udev": cmd_udev, "status": cmd_status,
      "set": cmd_set, "preview": cmd_preview}[args.cmd](args)
 
